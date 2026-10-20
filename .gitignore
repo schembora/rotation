@@ -1,4 +1,5 @@
 /target
 /data
 /web/*.json
+/web/puzzles/
 opensky-credentials.json

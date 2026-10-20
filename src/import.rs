@@ -73,6 +73,7 @@ pub fn rotation_from_flights(
         icao24: flights.first().map(|f| f.icao24.to_ascii_lowercase()),
         operator: info.and_then(|i| i.operator.clone()),
         legs,
+        sample: false,
     };
     rotation.validate().map_err(ImportError::Invalid)?;
     Ok(rotation)

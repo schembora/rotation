@@ -36,6 +36,9 @@ pub struct Rotation {
     pub icao24: Option<String>,
     pub operator: Option<String>,
     pub legs: Vec<Leg>,
+    /// A made-up day for demos rather than one flown for real.
+    #[serde(default)]
+    pub sample: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -109,6 +112,7 @@ pub struct LegClue {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Puzzle {
     pub number: u32,
+    /// The day the puzzle is published, not the day it was flown.
     pub date: NaiveDate,
     pub aircraft_type: String,
     /// Airline name, offered to the player as a hint.
@@ -117,12 +121,14 @@ pub struct Puzzle {
     /// ICAO codes of every stop, origin first.
     pub answer: Vec<String>,
     pub reveal: Reveal,
+    pub sample: bool,
 }
 
 /// Shown once the game ends: which aircraft this was, with links to look the
 /// day up on flight trackers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Reveal {
+    pub flown: NaiveDate,
     pub registration: Option<String>,
     pub links: Vec<links::Link>,
 }
@@ -184,9 +190,11 @@ impl Puzzle {
             clues,
             answer: rotation.stops().into_iter().map(String::from).collect(),
             reveal: Reveal {
+                flown: rotation.date,
                 registration: rotation.registration.clone(),
                 links: links::for_rotation(rotation),
             },
+            sample: rotation.sample,
         })
     }
 }
@@ -213,6 +221,7 @@ mod tests {
             icao24: None,
             operator: None,
             legs,
+            sample: false,
         }
     }
 

@@ -81,6 +81,7 @@ mod tests {
             icao24: icao24.map(String::from),
             operator: None,
             legs,
+            sample: false,
         }
     }
 

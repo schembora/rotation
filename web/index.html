@@ -250,7 +250,7 @@
 
   /* History */
   .history { display: grid; gap: 6px; }
-  .history h2, .result h2 {
+  .history h2, .result h2, .archive h2 {
     font-size: 0.72rem;
     text-transform: uppercase;
     letter-spacing: 0.12em;
@@ -304,6 +304,21 @@
     resize: none;
   }
 
+  /* Archive */
+  .archive { display: grid; gap: 6px; }
+  .archive ol { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+  .archive a {
+    display: inline-block;
+    font: 0.82rem var(--font-data);
+    color: var(--ink);
+    text-decoration: none;
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 4px 8px;
+  }
+  .archive a[aria-current="page"] { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+  .archive a.won::after { content: " ✓"; color: var(--correct); }
+
   @media (prefers-reduced-motion: reduce) {
     .node { transition: none; }
   }
@@ -312,7 +327,7 @@
 <main class="wrap">
   <header class="masthead">
     <h1 class="wordmark">ROTATION</h1>
-    <div class="issue"><span id="issue">No. —</span><span class="chip">Sample</span></div>
+    <div class="issue"><span id="issue">No. —</span><span class="chip" id="sample-chip" hidden>Sample</span></div>
   </header>
 
   <section class="brief" aria-labelledby="aircraft">
@@ -351,6 +366,11 @@
     <textarea class="share" id="share" rows="7" readonly aria-label="Shareable result"></textarea>
     <div class="actions"><button type="button" class="primary" id="copy">Copy result</button></div>
   </section>
+
+  <nav class="archive" id="archive" aria-labelledby="archive-title" hidden>
+    <h2 id="archive-title">Archive</h2>
+    <ol id="archive-list"></ol>
+  </nav>
 </main>
 <datalist id="airport-list"></datalist>
 
@@ -402,6 +422,10 @@
   const hm = (mins) => `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m`;
   const turn = (mins) => (mins >= 60 ? hm(mins) : `${mins}m`);
   const km = (n) => `${Math.round(n).toLocaleString("en")} km`;
+  const fmtDate = (iso) => {
+    const [y, m, d] = iso.split("-");
+    return `${Number(d)} ${MONTHS[m - 1]} ${y}`;
+  };
   const answerAirport = (i) => AP.byCode.get(P.answer[i]);
   function stopLabel(i) {
     const last = P.answer.length - 1;
@@ -409,7 +433,10 @@
   }
 
   // ---- state ----
-  const storageKey = () => `rotation-v2-${P.number}-${P.date}`;
+  const storageKey = (p = P) => `rotation-v2-${p.number}-${p.date}`;
+  function stored(p) {
+    try { return JSON.parse(localStorage.getItem(storageKey(p))); } catch { return null; }
+  }
   function freshState() {
     const n = P.answer.length;
     return {
@@ -484,6 +511,22 @@
 
     $("result").hidden = !S.done;
     if (S.done) renderResult();
+    renderArchive();
+  }
+
+  function renderArchive() {
+    const list = released();
+    $("archive").hidden = list.length < 2;
+    $("archive-list").replaceChildren(...list.map((p) => {
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = `#${p.date}`;
+      a.textContent = `No. ${p.number} · ${fmtDate(p.date)}`;
+      if (p.date === P.date) a.setAttribute("aria-current", "page");
+      if ((p.date === P.date ? S : stored(p))?.won) a.classList.add("won");
+      li.append(a);
+      return li;
+    }));
   }
 
   function renderStop(i) {
@@ -574,7 +617,8 @@
       return li;
     }));
     const reveal = P.reveal ?? { registration: null, links: [] };
-    $("tail").textContent = [AIRCRAFT[P.aircraft_type] ?? P.aircraft_type, reveal.registration, P.operator]
+    const flown = P.sample || !reveal.flown ? null : `flown ${fmtDate(reveal.flown)}`;
+    $("tail").textContent = [AIRCRAFT[P.aircraft_type] ?? P.aircraft_type, reveal.registration, P.operator, flown]
       .filter(Boolean)
       .join(" · ");
     $("links").replaceChildren(...reveal.links.map(({ label, url }) => {
@@ -687,46 +731,80 @@
   }
 
   // ---- boot ----
+  let INDEX = [];
+
+  function today() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  // Puzzles up to the player's local date; future ones stay hidden.
+  function released() {
+    const t = today();
+    const list = INDEX.filter((p) => p.date <= t);
+    return list.length ? list : INDEX.slice(0, 1);
+  }
+
+  // Today's puzzle, or an earlier one named in the link (#2026-10-20).
+  function pick() {
+    const list = released();
+    return list.find((p) => p.date === location.hash.slice(1)) ?? list[list.length - 1];
+  }
+
+  async function openPuzzle(entry, hotData) {
+    const resp = await fetch(`puzzles/${entry.date}.json`);
+    if (!resp.ok) throw new Error(`puzzle ${entry.date}: HTTP ${resp.status}`);
+    P = await resp.json();
+    S = (hotData?.date === P.date && hotData.state) || restore() || freshState();
+
+    $("issue").textContent = `No. ${P.number} · ${fmtDate(P.date)}`;
+    $("sample-chip").hidden = !P.sample;
+    $("aircraft").textContent = AIRCRAFT[P.aircraft_type] ?? P.aircraft_type;
+    $("lede").textContent = `One aircraft, one day, ${P.clues.length} legs. Name every airport it touched, in order.`;
+    $("copy").textContent = "Copy result";
+    msg("");
+    render();
+  }
+
   async function start(hotData) {
     try {
-      const [puzzle, airports] = await Promise.all([
-        fetch("puzzle.json").then((r) => r.json()),
+      const [index, airports] = await Promise.all([
+        fetch("puzzles/index.json").then((r) => r.json()),
         fetch("airports.json").then((r) => r.json()),
       ]);
-      P = puzzle;
+      INDEX = index.puzzles;
       AP.list = airports.map(([iata, icao, name, city, country, lat, lon]) => ({ iata, icao, name, city, country, lat, lon }));
       for (const a of AP.list) {
         AP.byCode.set(a.iata, a);
         AP.byCode.set(a.icao, a);
       }
-    } catch {
-      $("aircraft").textContent = "Puzzle data didn't load";
-      $("lede").textContent = "Serve the web folder over HTTP, for example: python3 -m http.server -d web";
-      return;
+
+      const frag = document.createDocumentFragment();
+      for (const a of AP.list) {
+        const o = document.createElement("option");
+        o.value = `${a.iata} · ${a.city || a.name}`;
+        o.label = a.name;
+        frag.append(o);
+      }
+      $("airport-list").append(frag);
+
+      $("guess-form").addEventListener("submit", submit);
+      $("hint-airline").addEventListener("click", hintAirline);
+      $("hint-country").addEventListener("click", hintCountry);
+      $("copy").addEventListener("click", copyShare);
+      window.addEventListener("hashchange", () => openPuzzle(pick()).catch(showLoadError));
+      window.claude?.hot?.snapshot?.(() => ({ state: S, date: P?.date }));
+
+      await openPuzzle(pick(), hotData);
+    } catch (e) {
+      showLoadError(e);
     }
+  }
 
-    const frag = document.createDocumentFragment();
-    for (const a of AP.list) {
-      const o = document.createElement("option");
-      o.value = `${a.iata} · ${a.city || a.name}`;
-      o.label = a.name;
-      frag.append(o);
-    }
-    $("airport-list").append(frag);
-
-    const [y, m, d] = P.date.split("-");
-    $("issue").textContent = `No. ${P.number} · ${Number(d)} ${MONTHS[m - 1]} ${y}`;
-    $("aircraft").textContent = AIRCRAFT[P.aircraft_type] ?? P.aircraft_type;
-    $("lede").textContent = `One aircraft, one day, ${P.clues.length} legs. Name every airport it touched, in order.`;
-
-    S = hotData?.state ?? restore() ?? freshState();
-    window.claude?.hot?.snapshot?.(() => ({ state: S }));
-
-    $("guess-form").addEventListener("submit", submit);
-    $("hint-airline").addEventListener("click", hintAirline);
-    $("hint-country").addEventListener("click", hintCountry);
-    $("copy").addEventListener("click", copyShare);
-    render();
+  function showLoadError(e) {
+    console.error(e);
+    $("aircraft").textContent = "Puzzle data didn't load";
+    $("lede").textContent = "Serve the web folder over HTTP, for example: python3 -m http.server -d web";
   }
 
   window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});

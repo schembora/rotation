@@ -36,7 +36,7 @@ jobs:
         run: |
           mkdir -p dist
           { printf '<!doctype html>\n<html lang="en">\n'; cat web/index.html; } > dist/index.html
-          cargo run --release -- export data/airports.csv samples/rotation.json dist
+          cargo run --release -- build data/airports.csv puzzles dist
 
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -11,10 +11,11 @@ use daily::grade::grade_stop;
 use daily::import::rotation_from_flights;
 use daily::model::{Puzzle, Rotation};
 use daily::opensky::{Client, Credentials};
+use serde::Serialize;
 
 const USAGE: &str = "usage:
   daily grade  <airports.csv> <guess> <answer>
-  daily export <airports.csv> <rotation.json> <out_dir>
+  daily build  <airports.csv> <puzzles_dir> <out_dir>
   daily scout  <airport-icao> <yyyy-mm-dd> [callsign-prefix]
   daily fetch  <icao24> <yyyy-mm-dd> <rotation.json>";
 
@@ -30,7 +31,7 @@ fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.iter().map(String::as_str).collect::<Vec<_>>().as_slice() {
         ["grade", csv, guess, answer] => grade(csv, guess, answer),
-        ["export", csv, rotation, out_dir] => export(csv, rotation, out_dir),
+        ["build", csv, puzzles, out_dir] => build(csv, puzzles, out_dir),
         ["scout", airport, date] => scout(airport, date, None),
         ["scout", airport, date, prefix] => scout(airport, date, Some(prefix)),
         ["fetch", icao24, date, out] => fetch(icao24, date, out),
@@ -65,11 +66,48 @@ fn grade(csv: &str, guess: &str, answer: &str) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Writes `puzzle.json` and a compact `airports.json` for the web frontend.
-fn export(csv: &str, rotation: &str, out_dir: &str) -> Result<(), Box<dyn Error>> {
+#[derive(Serialize)]
+struct IndexEntry {
+    number: u32,
+    date: NaiveDate,
+}
+
+/// Turns `puzzles_dir/YYYY-MM-DD.json` rotations (one per publish date) into
+/// the site's data: numbered puzzles, an index of them, and the airport list.
+fn build(csv: &str, puzzles_dir: &str, out_dir: &str) -> Result<(), Box<dyn Error>> {
     let db = AirportDb::load(csv)?;
-    let rotation: Rotation = serde_json::from_str(&std::fs::read_to_string(rotation)?)?;
-    let puzzle = Puzzle::from_rotation(1, rotation.date, &rotation, &db)?;
+
+    let mut sources: Vec<(NaiveDate, PathBuf)> = Vec::new();
+    for entry in std::fs::read_dir(puzzles_dir)? {
+        let path = entry?.path();
+        if path.extension().is_none_or(|ext| ext != "json") {
+            continue;
+        }
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or_default();
+        let date = stem
+            .parse()
+            .map_err(|_| format!("puzzle files are named by publish date, like 2026-10-21.json: {}", path.display()))?;
+        sources.push((date, path));
+    }
+    if sources.is_empty() {
+        return Err(format!("no puzzles in {puzzles_dir}").into());
+    }
+    sources.sort();
+
+    let out_dir = Path::new(out_dir);
+    std::fs::create_dir_all(out_dir.join("puzzles"))?;
+    let mut index = Vec::new();
+    for (number, (date, path)) in (1..).zip(&sources) {
+        let in_file = |e: &dyn std::fmt::Display| format!("{}: {e}", path.display());
+        let rotation: Rotation = serde_json::from_str(&std::fs::read_to_string(path)?).map_err(|e| in_file(&e))?;
+        let puzzle = Puzzle::from_rotation(number, *date, &rotation, &db).map_err(|e| in_file(&e))?;
+        std::fs::write(out_dir.join(format!("puzzles/{date}.json")), serde_json::to_string_pretty(&puzzle)?)?;
+        index.push(IndexEntry { number, date: *date });
+    }
+    std::fs::write(
+        out_dir.join("puzzles/index.json"),
+        serde_json::to_string_pretty(&serde_json::json!({ "puzzles": index }))?,
+    )?;
 
     // [iata, icao, name, city, country, lat, lon], coordinates to ~10 m.
     let round = |x: f64| (x * 1e4).round() / 1e4;
@@ -77,12 +115,10 @@ fn export(csv: &str, rotation: &str, out_dir: &str) -> Result<(), Box<dyn Error>
         .iter()
         .map(|a| (&a.iata, &a.icao, &a.name, &a.city, &a.country, round(a.coord.lat), round(a.coord.lon)))
         .collect();
-
-    let out_dir = Path::new(out_dir);
-    std::fs::create_dir_all(out_dir)?;
-    std::fs::write(out_dir.join("puzzle.json"), serde_json::to_string_pretty(&puzzle)?)?;
     std::fs::write(out_dir.join("airports.json"), serde_json::to_string(&airports)?)?;
-    println!("wrote puzzle #{} ({} legs) and {} airports to {}", puzzle.number, puzzle.clues.len(), airports.len(), out_dir.display());
+
+    let (first, last) = (sources[0].0, sources[sources.len() - 1].0);
+    println!("built {} puzzles ({first} to {last}) into {}", index.len(), out_dir.display());
     Ok(())
 }
 
@@ -136,7 +172,7 @@ fn scout(airport: &str, date: &str, prefix: Option<&str>) -> Result<(), Box<dyn 
         println!("  {icao24}  {callsign:<8}  {} legs  {}{returns}", rotation.legs.len(), stops.join(" > "));
         found += 1;
     }
-    println!("{found} puzzle-ready. Next: daily fetch <icao24> {date} <rotation.json>");
+    println!("{found} puzzle-ready. Next: daily fetch <icao24> {date} puzzles/<publish-date>.json");
     Ok(())
 }
 
