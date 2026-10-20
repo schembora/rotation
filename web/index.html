@@ -1,0 +1,705 @@
+<title>Rotation</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=B612:wght@400;700&family=B612+Mono:wght@400;700&display=swap">
+<style>
+  /* Layout: one column "flight progress board": airport slots on a vertical track,
+     each leg drawn as a buff ATC strip between them. */
+  :root {
+    --console: #dfe5e8;
+    --panel: #eef2f4;
+    --ink: #1b2730;
+    --muted: #586873;
+    --rule: #c3ccd2;
+    --strip: #f3e4bd;
+    --strip-ink: #2c2514;
+    --strip-muted: #7a6a44;
+    --strip-rule: #d2bb83;
+    --stub: #2f638c;
+    --accent: #234f78;
+    --accent-ink: #ffffff;
+    --correct: #2d8a57;
+    --close: #c08f12;
+    --wrong: #66737c;
+    --cell-ink: #ffffff;
+
+    --font-ui: "B612", "Helvetica Neue", Arial, sans-serif;
+    --font-data: "B612 Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --console: #0f161b;
+      --panel: #162027;
+      --ink: #dbe4e9;
+      --muted: #8b9ba5;
+      --rule: #2a3741;
+      --strip: #2d2717;
+      --strip-ink: #f1e0b2;
+      --strip-muted: #b29f70;
+      --strip-rule: #574a29;
+      --stub: #5e93bd;
+      --accent: #84b6dd;
+      --accent-ink: #0d1922;
+      --correct: #45b077;
+      --close: #ddb23c;
+      --wrong: #5d6b75;
+      --cell-ink: #0d1418;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --console: #0f161b;
+    --panel: #162027;
+    --ink: #dbe4e9;
+    --muted: #8b9ba5;
+    --rule: #2a3741;
+    --strip: #2d2717;
+    --strip-ink: #f1e0b2;
+    --strip-muted: #b29f70;
+    --strip-rule: #574a29;
+    --stub: #5e93bd;
+    --accent: #84b6dd;
+    --accent-ink: #0d1922;
+    --correct: #45b077;
+    --close: #ddb23c;
+    --wrong: #5d6b75;
+    --cell-ink: #0d1418;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--console);
+    color: var(--ink);
+    font: 15px/1.5 var(--font-ui);
+  }
+  .wrap {
+    max-width: 620px;
+    margin: 0 auto;
+    padding-block: 24px 48px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    display: grid;
+    gap: 28px;
+  }
+
+  /* Masthead */
+  .masthead {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px 16px;
+    border-bottom: 2px solid var(--ink);
+    padding-bottom: 10px;
+  }
+  .wordmark {
+    font-weight: 700;
+    font-size: 1.6rem;
+    letter-spacing: 0.32em;
+    margin: 0;
+  }
+  .issue {
+    font-family: var(--font-data);
+    font-size: 0.8rem;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .chip {
+    border: 1px solid var(--muted);
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+  }
+
+  /* Brief */
+  .brief { display: grid; gap: 6px; }
+  .eyebrow {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin: 0;
+  }
+  .aircraft {
+    font-size: clamp(1.6rem, 6vw, 2.2rem);
+    font-weight: 700;
+    line-height: 1.15;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .lede { margin: 0; max-width: 60ch; }
+  .howto { margin: 0; max-width: 60ch; color: var(--muted); font-size: 0.88rem; }
+  .airline { margin: 0; font: 700 1rem var(--font-data); color: var(--accent); }
+
+  /* Board: vertical track with stop nodes and leg strips */
+  .board {
+    position: relative;
+    display: grid;
+    gap: 12px;
+    padding-left: 34px;
+  }
+  .board::before {
+    content: "";
+    position: absolute;
+    left: 10px;
+    top: 14px;
+    bottom: 14px;
+    border-left: 2px dashed var(--rule);
+  }
+  .stop { position: relative; display: grid; gap: 4px; }
+  .node {
+    position: absolute;
+    left: -30px;
+    top: 4px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--console);
+    border: 2px solid var(--muted);
+    transition: background 0.2s, border-color 0.2s;
+  }
+  .stop[data-state="correct"] .node { background: var(--correct); border-color: var(--correct); }
+  .stop[data-state="close"] .node { background: var(--close); border-color: var(--close); }
+  .stop[data-state="wrong"] .node { background: var(--wrong); border-color: var(--wrong); }
+  .stop-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+  .stop input {
+    width: 100%;
+    font: 700 1.05rem var(--font-data);
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 9px 11px;
+  }
+  .stop input::placeholder { color: var(--muted); font-weight: 400; }
+  .stop input[aria-invalid="true"] { border-color: var(--close); box-shadow: 0 0 0 1px var(--close); }
+  .locked {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 10px;
+    padding: 8px 0;
+  }
+  .locked b { font: 700 1.3rem var(--font-data); color: var(--correct); }
+  .locked span { color: var(--muted); font-size: 0.88rem; }
+  .fb {
+    font-family: var(--font-data);
+    font-size: 0.82rem;
+    color: var(--muted);
+    min-height: 1.2em;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 12px;
+  }
+  .fb .v-close { color: var(--close); }
+  .fb .v-wrong { color: var(--ink); }
+
+  .strip {
+    display: grid;
+    grid-template-columns: auto repeat(3, minmax(0, 1fr));
+    background: var(--strip);
+    color: var(--strip-ink);
+    border-left: 8px solid var(--stub);
+    border-radius: 2px;
+    box-shadow: 0 1px 0 var(--strip-rule), 0 2px 6px rgb(0 0 0 / 0.08);
+  }
+  .cell { padding: 7px 10px 8px; min-width: 0; }
+  .cell + .cell { border-left: 1px solid var(--strip-rule); }
+  .cell .k {
+    display: block;
+    font-size: 0.64rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--strip-muted);
+  }
+  .cell .v {
+    display: block;
+    font: 700 clamp(0.95rem, 3.8vw, 1.15rem) var(--font-data);
+    white-space: nowrap;
+  }
+  .cell .v small { font-size: 0.65em; font-weight: 400; color: var(--strip-muted); }
+
+  /* Controls */
+  .controls { display: grid; gap: 12px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  button {
+    font: 700 0.92rem var(--font-ui);
+    border-radius: 4px;
+    padding: 10px 16px;
+    cursor: pointer;
+    border: 1px solid var(--accent);
+  }
+  .primary { background: var(--accent); color: var(--accent-ink); flex: 1 1 220px; }
+  .secondary { background: transparent; color: var(--accent); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .msg { margin: 0; min-height: 1.5em; font-size: 0.88rem; color: var(--muted); }
+
+  /* History */
+  .history { display: grid; gap: 6px; }
+  .history h2, .result h2 {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    margin: 0 0 4px;
+    font-weight: 400;
+  }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row .n { font: 0.75rem var(--font-data); color: var(--muted); width: 1.6em; }
+  .sq {
+    flex: 1 1 0;
+    min-width: 0;
+    text-align: center;
+    font: 700 0.82rem var(--font-data);
+    color: var(--cell-ink);
+    padding: 6px 0;
+    border-radius: 3px;
+  }
+  .sq.correct { background: var(--correct); }
+  .sq.close { background: var(--close); }
+  .sq.wrong { background: var(--wrong); }
+  .sq.skip { color: var(--muted); border: 1px dashed var(--rule); padding: 5px 0; }
+
+  /* Result */
+  .result {
+    display: grid;
+    gap: 12px;
+    background: var(--panel);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 16px;
+  }
+  .verdict { font-size: 1.3rem; font-weight: 700; margin: 0; }
+  .route { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+  .route li { display: flex; gap: 10px; align-items: baseline; }
+  .route b { font-family: var(--font-data); min-width: 3.2em; }
+  .route span { color: var(--muted); font-size: 0.88rem; }
+  .share {
+    width: 100%;
+    font: 0.9rem/1.4 var(--font-data);
+    color: var(--ink);
+    background: var(--console);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 10px;
+    resize: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .node { transition: none; }
+  }
+</style>
+
+<main class="wrap">
+  <header class="masthead">
+    <h1 class="wordmark">ROTATION</h1>
+    <div class="issue"><span id="issue">No. —</span><span class="chip">Sample</span></div>
+  </header>
+
+  <section class="brief" aria-labelledby="aircraft">
+    <p class="eyebrow">Today's aircraft</p>
+    <p class="aircraft" id="aircraft">Loading…</p>
+    <p class="lede" id="lede">One aircraft, one day of flying. Name every airport it touched, in order.</p>
+    <p class="airline" id="airline" hidden></p>
+    <p class="howto">Departure times are local to each airport. When the gap between two departures doesn't equal block time plus turn time, the aircraft crossed a time zone. Leave a stop blank to skip it on this guess.</p>
+  </section>
+
+  <form id="guess-form" class="controls" autocomplete="off">
+    <div id="board" class="board" aria-live="polite"></div>
+    <div class="actions">
+      <button type="submit" class="primary" id="submit">Submit guess</button>
+      <button type="button" class="secondary" id="hint-airline">Reveal airline</button>
+      <button type="button" class="secondary" id="hint-country">Reveal a country</button>
+    </div>
+    <p class="msg" id="msg" role="status"></p>
+  </form>
+
+  <section class="history" id="history" hidden>
+    <h2>Guesses</h2>
+    <div id="rows" class="history"></div>
+  </section>
+
+  <section class="result" id="result" hidden>
+    <h2>Flown today</h2>
+    <p class="verdict" id="verdict"></p>
+    <ol class="route" id="route"></ol>
+    <textarea class="share" id="share" rows="7" readonly aria-label="Shareable result"></textarea>
+    <div class="actions"><button type="button" class="primary" id="copy">Copy result</button></div>
+  </section>
+</main>
+<datalist id="airport-list"></datalist>
+
+<script>
+  const MAX_GUESSES = 6;
+  const CLOSE_KM = 300;
+  const EARTH_RADIUS_KM = 6371.0088;
+  const ARROWS = ["⬆", "↗", "➡", "↘", "⬇", "↙", "⬅", "↖"];
+  const AIRCRAFT = {
+    A20N: "Airbus A320neo", A320: "Airbus A320", A319: "Airbus A319", A321: "Airbus A321",
+    A21N: "Airbus A321neo", A333: "Airbus A330-300", A359: "Airbus A350-900",
+    B738: "Boeing 737-800", B38M: "Boeing 737 MAX 8", B789: "Boeing 787-9",
+    B77W: "Boeing 777-300ER", E190: "Embraer E190", AT76: "ATR 72-600", DH8D: "Dash 8-400",
+  };
+  const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+  const EMOJI = { correct: "🟩", close: "🟨", wrong: "⬛", skip: "⬜" };
+
+  const $ = (id) => document.getElementById(id);
+  let P = null;                       // puzzle
+  const AP = { byCode: new Map() };   // airports by IATA and ICAO
+  let S = null;                       // game state
+
+  let regionNames = null;
+  try { regionNames = new Intl.DisplayNames(["en"], { type: "region" }); } catch {}
+  const countryName = (cc) => { try { return regionNames?.of(cc) ?? cc; } catch { return cc; } };
+
+  // ---- geo, mirroring src/geo.rs and src/grade.rs ----
+  const rad = (d) => (d * Math.PI) / 180;
+  function distanceKm(a, b) {
+    const dlat = rad(b.lat - a.lat), dlon = rad(b.lon - a.lon);
+    const h = Math.sin(dlat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dlon / 2) ** 2;
+    return 2 * EARTH_RADIUS_KM * Math.asin(Math.sqrt(h));
+  }
+  function bearingDeg(a, b) {
+    const dlon = rad(b.lon - a.lon);
+    const y = Math.sin(dlon) * Math.cos(rad(b.lat));
+    const x = Math.cos(rad(a.lat)) * Math.sin(rad(b.lat)) - Math.sin(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.cos(dlon);
+    return ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+  }
+  const arrow = (deg) => ARROWS[Math.floor((deg + 22.5) / 45) % 8];
+  function grade(guess, answer) {
+    if (guess.icao === answer.icao) return { v: "correct", km: 0 };
+    const km = distanceKm(guess, answer);
+    const v = guess.country === answer.country || km <= CLOSE_KM ? "close" : "wrong";
+    return { v, km, dir: arrow(bearingDeg(guess, answer)) };
+  }
+
+  // ---- formatting ----
+  const hm = (mins) => `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, "0")}m`;
+  const turn = (mins) => (mins >= 60 ? hm(mins) : `${mins}m`);
+  const km = (n) => `${Math.round(n).toLocaleString("en")} km`;
+  const answerAirport = (i) => AP.byCode.get(P.answer[i]);
+  function stopLabel(i) {
+    const last = P.answer.length - 1;
+    return `Stop ${i + 1}${i === 0 ? " · Origin" : i === last ? " · Final" : ""}`;
+  }
+
+  // ---- state ----
+  const storageKey = () => `rotation-v2-${P.number}-${P.date}`;
+  function freshState() {
+    const n = P.answer.length;
+    return {
+      // The origin is given; everything after it is the puzzle.
+      locked: Array.from({ length: n }, (_, i) => i === 0),
+      airlineShown: false,
+      last: Array(n).fill(null),
+      drafts: Array(n).fill(""),
+      countryShown: Array(n).fill(false),
+      history: [],
+      hints: 0,
+      done: false,
+      won: false,
+    };
+  }
+  function save() {
+    try { localStorage.setItem(storageKey(), JSON.stringify(S)); } catch {}
+  }
+  function restore() {
+    try {
+      const raw = localStorage.getItem(storageKey());
+      const s = raw && JSON.parse(raw);
+      if (s && s.locked?.length === P.answer.length) return s;
+    } catch {}
+    return null;
+  }
+
+  // ---- input ----
+  function resolve(value) {
+    const v = value.trim();
+    if (!v) return null;
+    const code = v.split(/[\s·,]/)[0].toUpperCase();
+    const byCode = AP.byCode.get(code);
+    if (byCode) return byCode;
+    const lower = v.toLowerCase();
+    const byCity = AP.list.filter((a) => a.city.toLowerCase() === lower);
+    return byCity.length === 1 ? byCity[0] : null;
+  }
+
+  // ---- rendering ----
+  function render() {
+    const board = $("board");
+    board.replaceChildren();
+    P.answer.forEach((_, i) => {
+      board.append(renderStop(i));
+      if (i < P.clues.length) board.append(renderStrip(i));
+    });
+
+    const left = MAX_GUESSES - S.history.length;
+    $("submit").disabled = S.done;
+    $("submit").textContent = S.done ? "Rotation closed" : `Submit guess · ${left} left`;
+    $("hint-airline").hidden = !P.operator;
+    $("hint-airline").disabled = S.done || S.airlineShown;
+    $("hint-country").disabled = S.done || !nextCountryHint();
+    $("airline").hidden = !P.operator || !(S.airlineShown || S.done);
+    $("airline").textContent = `Operated by ${P.operator}`;
+
+    $("history").hidden = S.history.length === 0;
+    $("rows").replaceChildren(...S.history.map((row, n) => {
+      const el = document.createElement("div");
+      el.className = "row";
+      el.innerHTML = `<span class="n">${n + 1}</span>`;
+      for (const cell of row) {
+        const sq = document.createElement("span");
+        sq.className = `sq ${cell.v}`;
+        sq.textContent = cell.code;
+        sq.title = cell.v;
+        el.append(sq);
+      }
+      return el;
+    }));
+
+    $("result").hidden = !S.done;
+    if (S.done) renderResult();
+  }
+
+  function renderStop(i) {
+    const el = document.createElement("div");
+    el.className = "stop";
+    const last = S.last[i];
+    el.dataset.state = S.locked[i] ? "correct" : last?.v ?? "empty";
+
+    const node = document.createElement("span");
+    node.className = "node";
+    const label = document.createElement("label");
+    label.className = "stop-label";
+    label.htmlFor = `stop-${i}`;
+    label.textContent = stopLabel(i);
+    el.append(node, label);
+
+    if (S.locked[i] || S.done) {
+      const a = answerAirport(i);
+      const shown = document.createElement("div");
+      shown.className = "locked";
+      shown.id = `stop-${i}`;
+      shown.innerHTML = `<b></b><span></span>`;
+      shown.querySelector("b").textContent = a.iata;
+      shown.querySelector("span").textContent = `${a.name} · ${a.city}`;
+      if (!S.locked[i]) shown.querySelector("b").style.color = "var(--ink)";
+      el.append(shown);
+    } else {
+      const input = document.createElement("input");
+      input.id = `stop-${i}`;
+      input.setAttribute("list", "airport-list");
+      input.placeholder = "Airport code or city";
+      input.value = S.drafts[i];
+      input.autocapitalize = "characters";
+      input.spellcheck = false;
+      input.addEventListener("input", () => {
+        S.drafts[i] = input.value;
+        input.removeAttribute("aria-invalid");
+        save();
+      });
+      el.append(input);
+    }
+
+    const fb = document.createElement("div");
+    fb.className = "fb";
+    if (last && !S.locked[i]) {
+      const s = document.createElement("span");
+      s.className = `v-${last.v}`;
+      s.textContent = `${EMOJI[last.v]} ${last.code} · ${km(last.km)} ${last.dir}`;
+      fb.append(s);
+    } else if (last?.hint) {
+      fb.textContent = "Revealed by hint";
+    }
+    if (S.countryShown[i] && !S.locked[i]) {
+      const c = document.createElement("span");
+      c.textContent = `In ${countryName(answerAirport(i).country)}`;
+      fb.append(c);
+    }
+    el.append(fb);
+    return el;
+  }
+
+  function renderStrip(i) {
+    const c = P.clues[i];
+    const el = document.createElement("div");
+    el.className = "strip";
+    el.setAttribute("aria-label", `Leg ${i + 1}`);
+    const cells = [
+      ["Leg", String(i + 1)],
+      ["Departs", `${c.departure_local.slice(0, 5)}<small> LT</small>`],
+      ["Block", hm(c.block_minutes)],
+      ["Turn", c.ground_minutes_after == null ? "—" : turn(c.ground_minutes_after)],
+    ];
+    el.innerHTML = cells.map(([k, v]) => `<div class="cell"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("");
+    return el;
+  }
+
+  function renderResult() {
+    const tries = S.history.length;
+    $("verdict").textContent = S.won
+      ? `Solved in ${tries} of ${MAX_GUESSES}${S.hints ? `, ${S.hints} hint${S.hints > 1 ? "s" : ""}` : ""}`
+      : "Out of guesses";
+    $("route").replaceChildren(...P.answer.map((_, i) => {
+      const a = answerAirport(i);
+      const li = document.createElement("li");
+      li.innerHTML = "<b></b><span></span>";
+      li.querySelector("b").textContent = a.iata;
+      li.querySelector("span").textContent = `${a.name}, ${countryName(a.country)}`;
+      return li;
+    }));
+    const head = `Rotation #${P.number} ✈ ${AIRCRAFT[P.aircraft_type] ?? P.aircraft_type} · ${P.clues.length} legs`;
+    const rows = S.history.map((row) => row.map((c) => EMOJI[c.v]).join(""));
+    const score = `${S.won ? tries : "X"}/${MAX_GUESSES}${S.hints ? ` 💡${S.hints}` : ""}`;
+    $("share").value = [head, ...rows, score].join("\n");
+  }
+
+  function msg(text) { $("msg").textContent = text; }
+
+  // ---- actions ----
+  function submit(e) {
+    e.preventDefault();
+    if (S.done) return;
+    const picks = [];
+    let firstBad = null;
+    P.answer.forEach((_, i) => {
+      if (S.locked[i]) return;
+      const input = $(`stop-${i}`);
+      if (!input.value.trim()) {
+        input.removeAttribute("aria-invalid");
+        return;
+      }
+      const a = resolve(input.value);
+      input.setAttribute("aria-invalid", a ? "false" : "true");
+      if (!a && !firstBad) firstBad = input;
+      picks[i] = a;
+    });
+    if (firstBad) {
+      msg("That airport isn't in the list. Type a code like LHR or EGLL, or pick one from the suggestions.");
+      firstBad.focus();
+      return;
+    }
+    if (!picks.some(Boolean)) {
+      msg("Enter at least one airport. Stops you leave blank are skipped.");
+      return;
+    }
+
+    // The given origin is left out of the guess row and the share grid.
+    const row = P.answer.map((_, i) => {
+      if (S.locked[i]) return { code: answerAirport(i).iata, v: "correct" };
+      if (!picks[i]) return { code: "—", v: "skip" };
+      const r = grade(picks[i], answerAirport(i));
+      S.last[i] = { code: picks[i].iata, ...r };
+      S.drafts[i] = picks[i].iata;
+      if (r.v === "correct") S.locked[i] = true;
+      return { code: picks[i].iata, v: r.v };
+    }).slice(1);
+    S.history.push(row);
+
+    const solved = row.filter((c) => c.v === "correct").length;
+    if (S.locked.every(Boolean)) {
+      S.done = S.won = true;
+      msg("");
+    } else if (S.history.length >= MAX_GUESSES) {
+      S.done = true;
+      msg("");
+    } else {
+      msg(`${solved} of ${row.length} stops correct.`);
+    }
+    save();
+    render();
+  }
+
+  function nextCountryHint() {
+    return P.answer.findIndex((_, i) => !S.locked[i] && !S.countryShown[i]) + 1;
+  }
+
+  function hintAirline() {
+    if (!P.operator || S.airlineShown || S.done) return;
+    S.airlineShown = true;
+    S.hints++;
+    msg(`Operated by ${P.operator}.`);
+    save();
+    render();
+  }
+
+  function hintCountry() {
+    const i = nextCountryHint() - 1;
+    if (i < 0 || S.done) return;
+    S.countryShown[i] = true;
+    S.hints++;
+    msg(`${stopLabel(i)} is in ${countryName(answerAirport(i).country)}.`);
+    save();
+    render();
+  }
+
+  async function copyShare() {
+    const text = $("share").value;
+    try {
+      await navigator.clipboard.writeText(text);
+      $("copy").textContent = "Copied";
+    } catch {
+      $("share").select();
+      $("copy").textContent = "Press ⌘C / Ctrl+C to copy";
+    }
+  }
+
+  // ---- boot ----
+  async function start(hotData) {
+    try {
+      const [puzzle, airports] = await Promise.all([
+        fetch("puzzle.json").then((r) => r.json()),
+        fetch("airports.json").then((r) => r.json()),
+      ]);
+      P = puzzle;
+      AP.list = airports.map(([iata, icao, name, city, country, lat, lon]) => ({ iata, icao, name, city, country, lat, lon }));
+      for (const a of AP.list) {
+        AP.byCode.set(a.iata, a);
+        AP.byCode.set(a.icao, a);
+      }
+    } catch {
+      $("aircraft").textContent = "Puzzle data didn't load";
+      $("lede").textContent = "Serve the web folder over HTTP, for example: python3 -m http.server -d web";
+      return;
+    }
+
+    const frag = document.createDocumentFragment();
+    for (const a of AP.list) {
+      const o = document.createElement("option");
+      o.value = `${a.iata} · ${a.city || a.name}`;
+      o.label = a.name;
+      frag.append(o);
+    }
+    $("airport-list").append(frag);
+
+    const [y, m, d] = P.date.split("-");
+    $("issue").textContent = `No. ${P.number} · ${Number(d)} ${MONTHS[m - 1]} ${y}`;
+    $("aircraft").textContent = AIRCRAFT[P.aircraft_type] ?? P.aircraft_type;
+    $("lede").textContent = `One aircraft, one day, ${P.clues.length} legs. Name every airport it touched, in order.`;
+
+    S = hotData?.state ?? restore() ?? freshState();
+    window.claude?.hot?.snapshot?.(() => ({ state: S }));
+
+    $("guess-form").addEventListener("submit", submit);
+    $("hint-airline").addEventListener("click", hintAirline);
+    $("hint-country").addEventListener("click", hintCountry);
+    $("copy").addEventListener("click", copyShare);
+    render();
+  }
+
+  window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+</script>

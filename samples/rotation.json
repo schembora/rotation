@@ -1,0 +1,12 @@
+{
+  "date": "2026-10-20",
+  "aircraft_type": "A20N",
+  "registration": null,
+  "operator": "easyJet",
+  "legs": [
+    { "from": "EGKK", "to": "LEMG", "departure": "2026-10-20T05:10:00Z", "arrival": "2026-10-20T07:50:00Z" },
+    { "from": "LEMG", "to": "EGKK", "departure": "2026-10-20T08:35:00Z", "arrival": "2026-10-20T11:20:00Z" },
+    { "from": "EGKK", "to": "EGPH", "departure": "2026-10-20T12:10:00Z", "arrival": "2026-10-20T13:30:00Z" },
+    { "from": "EGPH", "to": "EGKK", "departure": "2026-10-20T14:10:00Z", "arrival": "2026-10-20T15:35:00Z" }
+  ]
+}
