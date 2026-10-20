@@ -1,4 +1,5 @@
 pub mod aircraft;
+pub mod airlines;
 pub mod airports;
 pub mod geo;
 pub mod grade;

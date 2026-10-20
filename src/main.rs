@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use chrono::NaiveDate;
 use daily::aircraft;
+use daily::airlines::AirlineDb;
 use daily::airports::AirportDb;
 use daily::grade::grade_stop;
 use daily::import::rotation_from_flights;
@@ -19,6 +20,7 @@ const USAGE: &str = "usage:
 
 const AIRPORTS_CSV: &str = "data/airports.csv";
 const AIRCRAFT_CSV: &str = "data/aircraftDatabase.csv";
+const AIRLINES_DAT: &str = "data/airlines.dat";
 /// Override with the OPENSKY_CREDENTIALS environment variable.
 const CREDENTIALS: &str = "opensky-credentials.json";
 /// Aircraft checked per scout run, to stay well inside OpenSky's rate limits.
@@ -148,7 +150,12 @@ fn fetch(icao24: &str, date: &str, out: &str) -> Result<(), Box<dyn Error>> {
         None
     };
     let flights = opensky()?.flights_by_aircraft(icao24, date)?;
-    let rotation = rotation_from_flights(date, flights, info.as_ref())?;
+    let mut rotation = rotation_from_flights(date, flights, info.as_ref())?;
+    if rotation.operator.is_none() && Path::new(AIRLINES_DAT).exists() {
+        let callsign = rotation.legs.iter().find_map(|leg| leg.callsign.as_deref());
+        let airlines = AirlineDb::load(AIRLINES_DAT)?;
+        rotation.operator = callsign.and_then(|c| airlines.for_callsign(c)).map(String::from);
+    }
     Puzzle::from_rotation(0, date, &rotation, &AirportDb::load(AIRPORTS_CSV)?)?;
 
     std::fs::write(out, serde_json::to_string_pretty(&rotation)? + "\n")?;
