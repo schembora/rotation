@@ -288,6 +288,11 @@
   .route li { display: flex; gap: 10px; align-items: baseline; }
   .route b { font-family: var(--font-data); min-width: 3.2em; }
   .route span { color: var(--muted); font-size: 0.88rem; }
+  .reveal { display: grid; gap: 6px; border-top: 1px solid var(--rule); padding-top: 12px; }
+  .tail { margin: 0; font: 700 1rem var(--font-data); }
+  .links { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+  .links a { color: var(--accent); text-underline-offset: 3px; overflow-wrap: anywhere; }
+  .note { margin: 0; color: var(--muted); font-size: 0.85rem; max-width: 60ch; }
   .share {
     width: 100%;
     font: 0.9rem/1.4 var(--font-data);
@@ -337,6 +342,12 @@
     <h2>Flown today</h2>
     <p class="verdict" id="verdict"></p>
     <ol class="route" id="route"></ol>
+    <div class="reveal">
+      <h2>The aircraft</h2>
+      <p class="tail" id="tail"></p>
+      <ul class="links" id="links"></ul>
+      <p class="note" id="links-note" hidden>This is a sample day, so there's no real flight to look up. Puzzles built from real flight data link to the exact flights here.</p>
+    </div>
     <textarea class="share" id="share" rows="7" readonly aria-label="Shareable result"></textarea>
     <div class="actions"><button type="button" class="primary" id="copy">Copy result</button></div>
   </section>
@@ -562,6 +573,23 @@
       li.querySelector("span").textContent = `${a.name}, ${countryName(a.country)}`;
       return li;
     }));
+    const reveal = P.reveal ?? { registration: null, links: [] };
+    $("tail").textContent = [AIRCRAFT[P.aircraft_type] ?? P.aircraft_type, reveal.registration, P.operator]
+      .filter(Boolean)
+      .join(" · ");
+    $("links").replaceChildren(...reveal.links.map(({ label, url }) => {
+      const li = document.createElement("li");
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = `${label} ↗`;
+      li.append(a);
+      return li;
+    }));
+    $("links").hidden = reveal.links.length === 0;
+    $("links-note").hidden = reveal.links.length > 0;
+
     const head = `Rotation #${P.number} ✈ ${AIRCRAFT[P.aircraft_type] ?? P.aircraft_type} · ${P.clues.length} legs`;
     const rows = S.history.map((row) => row.map((c) => EMOJI[c.v]).join(""));
     const score = `${S.won ? tries : "X"}/${MAX_GUESSES}${S.hints ? ` 💡${S.hints}` : ""}`;

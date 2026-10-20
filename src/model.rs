@@ -4,6 +4,7 @@ use chrono::{DateTime, NaiveDate, NaiveTime, TimeDelta, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::airports::AirportDb;
+use crate::links;
 
 /// A single flight. Airports are stored as ICAO codes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -12,6 +13,9 @@ pub struct Leg {
     pub to: String,
     pub departure: DateTime<Utc>,
     pub arrival: DateTime<Utc>,
+    /// ATC callsign as broadcast, e.g. `BAW304`.
+    #[serde(default)]
+    pub callsign: Option<String>,
 }
 
 impl Leg {
@@ -27,6 +31,9 @@ pub struct Rotation {
     /// ICAO type designator, e.g. `A20N`, `B738`.
     pub aircraft_type: String,
     pub registration: Option<String>,
+    /// 24-bit transponder address in hex, e.g. `406b2f`.
+    #[serde(default)]
+    pub icao24: Option<String>,
     pub operator: Option<String>,
     pub legs: Vec<Leg>,
 }
@@ -109,6 +116,15 @@ pub struct Puzzle {
     pub clues: Vec<LegClue>,
     /// ICAO codes of every stop, origin first.
     pub answer: Vec<String>,
+    pub reveal: Reveal,
+}
+
+/// Shown once the game ends: which aircraft this was, with links to look the
+/// day up on flight trackers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reveal {
+    pub registration: Option<String>,
+    pub links: Vec<links::Link>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -167,6 +183,10 @@ impl Puzzle {
             operator: rotation.operator.clone(),
             clues,
             answer: rotation.stops().into_iter().map(String::from).collect(),
+            reveal: Reveal {
+                registration: rotation.registration.clone(),
+                links: links::for_rotation(rotation),
+            },
         })
     }
 }
@@ -181,6 +201,7 @@ mod tests {
             to: to.into(),
             departure: dep.parse().unwrap(),
             arrival: arr.parse().unwrap(),
+            callsign: None,
         }
     }
 
@@ -189,6 +210,7 @@ mod tests {
             date: NaiveDate::from_ymd_opt(2026, 10, 19).unwrap(),
             aircraft_type: "A20N".into(),
             registration: None,
+            icao24: None,
             operator: None,
             legs,
         }
