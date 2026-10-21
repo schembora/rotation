@@ -869,8 +869,9 @@
       const frag = document.createDocumentFragment();
       for (const a of AP.list) {
         const o = document.createElement("option");
-        o.value = `${a.iata} · ${a.city || a.name}`;
-        o.label = a.name;
+        // One line, code first: some browsers show only the label, so there is none.
+        const place = a.city && !a.name.includes(a.city) ? `, ${a.city}` : "";
+        o.value = `${a.iata} · ${a.name}${place}`;
         frag.append(o);
       }
       $("airport-list").append(frag);
