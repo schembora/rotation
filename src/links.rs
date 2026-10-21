@@ -1,7 +1,7 @@
 use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 
-use crate::model::{Leg, Rotation};
+use crate::model::Rotation;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Link {
@@ -9,19 +9,12 @@ pub struct Link {
     pub url: String,
 }
 
-/// FlightAware's page for one specific flight on one day.
-pub fn flightaware_flight(callsign: &str, leg: &Leg) -> String {
-    format!(
-        "https://www.flightaware.com/live/flight/{}/history/{}/{}Z/{}/{}",
-        callsign.trim().to_ascii_uppercase(),
-        leg.departure.format("%Y%m%d"),
-        leg.departure.format("%H%M"),
-        leg.from,
-        leg.to,
-    )
-}
+// No per-flight FlightAware links: those URLs need the flight number and the
+// scheduled departure time, and OpenSky only gives the ATC callsign (BAW7LN
+// rather than BAW572) and when the aircraft was first heard.
 
 /// FlightAware's page for an airframe, keyed by registration without the dash.
+/// It lists the airframe's recent flights, including the puzzle's.
 pub fn flightaware_tail(registration: &str) -> String {
     format!(
         "https://www.flightaware.com/live/flight/{}",
@@ -39,15 +32,8 @@ pub fn adsbx_trace(icao24: &str, date: NaiveDate) -> String {
 }
 
 /// Every link we can build from the identifiers the rotation carries:
-/// one per leg with a callsign, then the day's replay, then the airframe.
+/// the day's replay first, then the airframe.
 pub fn for_rotation(rotation: &Rotation) -> Vec<Link> {
-    let legs = rotation.legs.iter().filter_map(|leg| {
-        let callsign = leg.callsign.as_deref()?.trim();
-        Some(Link {
-            label: format!("{callsign} · {} → {} on FlightAware", leg.from, leg.to),
-            url: flightaware_flight(callsign, leg),
-        })
-    });
     let replay = rotation.icao24.as_deref().map(|hex| Link {
         label: "Replay the whole day on ADS-B Exchange".into(),
         url: adsbx_trace(hex, rotation.date),
@@ -56,12 +42,13 @@ pub fn for_rotation(rotation: &Rotation) -> Vec<Link> {
         label: format!("{reg} on FlightAware"),
         url: flightaware_tail(reg),
     });
-    legs.chain(replay).chain(tail).collect()
+    replay.into_iter().chain(tail).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::Leg;
 
     fn leg(callsign: Option<&str>) -> Leg {
         Leg {
@@ -87,10 +74,6 @@ mod tests {
 
     #[test]
     fn url_formats() {
-        assert_eq!(
-            flightaware_flight("baw304 ", &leg(None)),
-            "https://www.flightaware.com/live/flight/BAW304/history/20261020/0700Z/EGLL/LFPG"
-        );
         assert_eq!(flightaware_tail("G-TTNA"), "https://www.flightaware.com/live/flight/GTTNA");
         assert_eq!(
             adsbx_trace("406B2F", NaiveDate::from_ymd_opt(2026, 10, 20).unwrap()),
@@ -102,14 +85,7 @@ mod tests {
     fn links_follow_available_identifiers() {
         let full = rotation(vec![leg(Some("BAW304")), leg(None)], Some("G-TTNA"), Some("406b2f"));
         let labels: Vec<_> = for_rotation(&full).into_iter().map(|l| l.label).collect();
-        assert_eq!(
-            labels,
-            [
-                "BAW304 · EGLL → LFPG on FlightAware",
-                "Replay the whole day on ADS-B Exchange",
-                "G-TTNA on FlightAware",
-            ]
-        );
+        assert_eq!(labels, ["Replay the whole day on ADS-B Exchange", "G-TTNA on FlightAware"]);
 
         assert!(for_rotation(&rotation(vec![leg(None)], None, None)).is_empty());
     }

@@ -1,21 +1,31 @@
 {
-  "date": "2026-10-20",
-  "aircraft_type": "A20N",
-  "registration": null,
+  "date": "2026-10-19",
+  "aircraft_type": "A319",
+  "registration": "G-EUPD",
+  "icao24": "400804",
   "operator": "British Airways",
   "legs": [
     {
       "from": "EGLL",
-      "to": "LFPG",
-      "departure": "2026-10-20T07:00:00Z",
-      "arrival": "2026-10-20T08:15:00Z"
+      "to": "LIML",
+      "departure": "2026-10-19T09:50:00Z",
+      "arrival": "2026-10-19T11:25:00Z",
+      "callsign": "BAW7LN"
     },
     {
-      "from": "LFPG",
+      "from": "LIML",
       "to": "EGLL",
-      "departure": "2026-10-20T09:05:00Z",
-      "arrival": "2026-10-20T10:25:00Z"
+      "departure": "2026-10-19T12:45:00Z",
+      "arrival": "2026-10-19T14:20:00Z",
+      "callsign": "BAW573"
+    },
+    {
+      "from": "EGLL",
+      "to": "EDDM",
+      "departure": "2026-10-19T19:45:00Z",
+      "arrival": "2026-10-19T21:05:00Z",
+      "callsign": "BAW94DL"
     }
   ],
-  "sample": true
+  "sample": false
 }
