@@ -516,6 +516,43 @@
     return byCity.length === 1 ? byCity[0] : null;
   }
 
+  // Suggestions are rebuilt per keystroke so the best matches come first:
+  // the browser's own filter keeps file order, which buries LHR under every
+  // airport with "lhr" in its name. Each option leads with the IATA code and
+  // carries the ICAO code at the end, so typing either one keeps it listed.
+  const SUGGESTIONS = 12;
+  function matchRank(a, q, lower) {
+    if (a.iata === q) return 0;
+    if (a.icao === q) return 1;
+    if (a.iata.startsWith(q)) return 2;
+    if (a.icao.startsWith(q)) return 3;
+    if (a.city.toLowerCase().startsWith(lower)) return 4;
+    if (a.name.toLowerCase().split(/\s+/).some((w) => w.startsWith(lower))) return 5;
+    if (a.city.toLowerCase().includes(lower) || a.name.toLowerCase().includes(lower)) return 6;
+    return -1;
+  }
+  function suggestion(a) {
+    const place = a.city && !a.name.includes(a.city) ? `, ${a.city}` : "";
+    return `${a.iata} · ${a.name}${place} · ${a.icao}`;
+  }
+  function suggest(value) {
+    const lower = value.trim().toLowerCase();
+    const q = lower.toUpperCase();
+    const ranked = [];
+    if (lower) {
+      for (const a of AP.list) {
+        const r = matchRank(a, q, lower);
+        if (r >= 0) ranked.push([r, a]);
+      }
+      ranked.sort((x, y) => x[0] - y[0]);
+    }
+    $("airport-list").replaceChildren(...ranked.slice(0, SUGGESTIONS).map(([, a]) => {
+      const o = document.createElement("option");
+      o.value = suggestion(a);
+      return o;
+    }));
+  }
+
   // ---- rendering ----
   function render() {
     const board = $("board");
@@ -603,9 +640,11 @@
       input.spellcheck = false;
       input.addEventListener("input", () => {
         S.drafts[i] = input.value;
+        suggest(input.value);
         input.removeAttribute("aria-invalid");
         save();
       });
+      input.addEventListener("focus", () => suggest(input.value));
       el.append(input);
     }
 
@@ -866,15 +905,6 @@
         AP.byCode.set(a.icao, a);
       }
 
-      const frag = document.createDocumentFragment();
-      for (const a of AP.list) {
-        const o = document.createElement("option");
-        // One line, code first: some browsers show only the label, so there is none.
-        const place = a.city && !a.name.includes(a.city) ? `, ${a.city}` : "";
-        o.value = `${a.iata} · ${a.name}${place}`;
-        frag.append(o);
-      }
-      $("airport-list").append(frag);
 
       $("guess-form").addEventListener("submit", submit);
       $("hint-airline").addEventListener("click", hintAirline);
