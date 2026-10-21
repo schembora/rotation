@@ -95,16 +95,24 @@ impl Client {
 
     /// Every flight by one airframe that started during the given UTC day.
     pub fn flights_by_aircraft(&self, icao24: &str, date: NaiveDate) -> Result<Vec<Flight>, Error> {
-        self.flights("aircraft", "icao24", &icao24.to_ascii_lowercase(), date)
+        let mut all: Vec<Flight> = Vec::new();
+        for window in local_day_windows(date) {
+            for f in self.flights("aircraft", "icao24", &icao24.to_ascii_lowercase(), window)? {
+                // A flight spanning the seam can come back from both windows.
+                if !all.iter().any(|g| g.first_seen == f.first_seen) {
+                    all.push(f);
+                }
+            }
+        }
+        Ok(all)
     }
 
     /// Every flight that departed the given airport (ICAO code) during the UTC day.
     pub fn departures(&self, airport: &str, date: NaiveDate) -> Result<Vec<Flight>, Error> {
-        self.flights("departure", "airport", &airport.to_ascii_uppercase(), date)
+        self.flights("departure", "airport", &airport.to_ascii_uppercase(), day_bounds(date))
     }
 
-    fn flights(&self, endpoint: &str, key: &str, value: &str, date: NaiveDate) -> Result<Vec<Flight>, Error> {
-        let (begin, end) = day_bounds(date);
+    fn flights(&self, endpoint: &str, key: &str, value: &str, (begin, end): (i64, i64)) -> Result<Vec<Flight>, Error> {
         let result = ureq::get(format!("{API_URL}/flights/{endpoint}"))
             .header("Authorization", format!("Bearer {}", self.token))
             .query(key, value)
@@ -124,6 +132,14 @@ impl Client {
 pub fn day_bounds(date: NaiveDate) -> (i64, i64) {
     let begin = date.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp();
     (begin, begin + 86_400)
+}
+
+/// The UTC day padded by 12 hours each side, so it holds the local calendar
+/// day almost everywhere (UTC-12 to UTC+12), as two one-day windows: OpenSky
+/// rejects longer aircraft queries with 400.
+pub fn local_day_windows(date: NaiveDate) -> [(i64, i64); 2] {
+    let (begin, end) = day_bounds(date);
+    [(begin - 43_200, begin + 43_200), (begin + 43_200, end + 43_200)]
 }
 
 #[cfg(test)]

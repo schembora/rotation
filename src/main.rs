@@ -163,7 +163,7 @@ fn scout(airport: &str, date: &str, prefix: Option<&str>) -> Result<(), Box<dyn 
                 continue;
             }
         };
-        let Ok(rotation) = rotation_from_flights(date, flights, None) else { continue };
+        let Ok(rotation) = rotation_from_flights(date, flights, None, |c| airports.get(c).map(|a| a.tz)) else { continue };
         if !(2..=6).contains(&rotation.legs.len()) || Puzzle::from_rotation(0, date, &rotation, &airports).is_err() {
             continue;
         }
@@ -185,14 +185,18 @@ fn fetch(icao24: &str, date: &str, out: &str) -> Result<(), Box<dyn Error>> {
         eprintln!("warning: {AIRCRAFT_CSV} not found, so type, registration and airline will be blank");
         None
     };
+    let airports = AirportDb::load(AIRPORTS_CSV)?;
     let flights = opensky()?.flights_by_aircraft(icao24, date)?;
-    let mut rotation = rotation_from_flights(date, flights, info.as_ref())?;
+    let mut rotation = rotation_from_flights(date, flights, info.as_ref(), |c| airports.get(c).map(|a| a.tz))?;
+    if rotation.registration.is_none() {
+        rotation.registration = aircraft::us_registration(icao24);
+    }
     if rotation.operator.is_none() && Path::new(AIRLINES_DAT).exists() {
         let callsign = rotation.legs.iter().find_map(|leg| leg.callsign.as_deref());
         let airlines = AirlineDb::load(AIRLINES_DAT)?;
         rotation.operator = callsign.and_then(|c| airlines.for_callsign(c)).map(String::from);
     }
-    Puzzle::from_rotation(0, date, &rotation, &AirportDb::load(AIRPORTS_CSV)?)?;
+    Puzzle::from_rotation(0, date, &rotation, &airports)?;
 
     std::fs::write(out, serde_json::to_string_pretty(&rotation)? + "\n")?;
     println!(

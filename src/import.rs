@@ -3,6 +3,7 @@
 use std::fmt;
 
 use chrono::{DateTime, NaiveDate, Utc};
+use chrono_tz::Tz;
 
 use crate::aircraft::AircraftInfo;
 use crate::model::{Leg, Rotation, RotationError};
@@ -37,14 +38,23 @@ fn rounded(unix: i64) -> DateTime<Utc> {
     DateTime::from_timestamp(secs, 0).expect("OpenSky timestamps are in range")
 }
 
-/// Builds one airframe's day from its flights. Ground-only "flights" (same
+/// Builds one airframe's day from its flights: those that departed on `date`
+/// in the departure airport's own time zone, so a US day isn't cut at
+/// midnight UTC (late afternoon locally). `tz_of` maps an airport's ICAO code
+/// to its zone; unknown airports count as UTC. Ground-only "flights" (same
 /// departure and arrival airport) are dropped; anything else odd, such as a
 /// missing airport or a gap in the chain, rejects the day.
 pub fn rotation_from_flights(
     date: NaiveDate,
     mut flights: Vec<Flight>,
     info: Option<&AircraftInfo>,
+    tz_of: impl Fn(&str) -> Option<Tz>,
 ) -> Result<Rotation, ImportError> {
+    flights.retain(|f| {
+        let Some(from) = &f.est_departure_airport else { return true };
+        let tz = tz_of(from).unwrap_or(chrono_tz::UTC);
+        DateTime::from_timestamp(f.first_seen, 0).is_some_and(|t| t.with_timezone(&tz).date_naive() == date)
+    });
     flights.sort_by_key(|f| f.first_seen);
     let mut legs = Vec::new();
     for (i, f) in flights.iter().enumerate() {
@@ -112,7 +122,7 @@ mod tests {
             flight(Some("LFPG"), Some("EGLL"), T0 + 7_520, T0 + 12_290, "BAW305  "),
             flight(Some("EGLL"), Some("LFPG"), T0 + 70, T0 + 4_480, "BAW304  "),
         ];
-        let r = rotation_from_flights(DATE, flights, Some(&info())).unwrap();
+        let r = rotation_from_flights(DATE, flights, Some(&info()), |_| None).unwrap();
         assert_eq!(r.stops(), ["EGLL", "LFPG", "EGLL"]);
         assert_eq!(r.legs[0].departure.to_rfc3339(), "2026-10-20T07:00:00+00:00");
         assert_eq!(r.legs[0].arrival.to_rfc3339(), "2026-10-20T08:15:00+00:00");
@@ -128,16 +138,16 @@ mod tests {
             flight(Some("EGLL"), Some("EGLL"), T0 - 1_800, T0 - 1_200, "BAW304"),
             flight(Some("EGLL"), Some("LFPG"), T0, T0 + 4_500, "BAW304"),
         ];
-        let r = rotation_from_flights(DATE, flights, None).unwrap();
+        let r = rotation_from_flights(DATE, flights, None, |_| None).unwrap();
         assert_eq!(r.legs.len(), 1);
         assert_eq!(r.aircraft_type, "");
     }
 
     #[test]
     fn rejects_messy_days() {
-        assert_eq!(rotation_from_flights(DATE, vec![], None), Err(ImportError::NoFlights));
+        assert_eq!(rotation_from_flights(DATE, vec![], None, |_| None), Err(ImportError::NoFlights));
         assert_eq!(
-            rotation_from_flights(DATE, vec![flight(Some("EGLL"), None, T0, T0 + 4_500, "X")], None),
+            rotation_from_flights(DATE, vec![flight(Some("EGLL"), None, T0, T0 + 4_500, "X")], None, |_| None),
             Err(ImportError::UnknownAirport(0))
         );
         let gap = vec![
@@ -145,8 +155,24 @@ mod tests {
             flight(Some("EDDF"), Some("EGLL"), T0 + 9_000, T0 + 15_000, "X"),
         ];
         assert_eq!(
-            rotation_from_flights(DATE, gap, None),
+            rotation_from_flights(DATE, gap, None, |_| None),
             Err(ImportError::Invalid(RotationError::Disconnected(1)))
         );
+    }
+
+    #[test]
+    fn keeps_the_local_day() {
+        // Denver is UTC-6 in October: the day runs 06:00Z to 06:00Z next day.
+        let denver = |code: &str| code.starts_with('K').then_some(chrono_tz::America::Denver);
+        let flights = vec![
+            // 01:00Z on the 20th, but 19:00 local on the 19th: the evening before.
+            flight(Some("KDEN"), Some("KLAS"), T0 - 21_600, T0 - 15_000, "SWA1"),
+            // 07:00 local on the 20th.
+            flight(Some("KLAS"), Some("KDEN"), T0 + 21_600, T0 + 27_000, "SWA2"),
+            // 01:30Z on the 21st, but 19:30 local on the 20th: still today.
+            flight(Some("KDEN"), Some("KPHX"), T0 + 66_600, T0 + 73_200, "SWA3"),
+        ];
+        let r = rotation_from_flights(DATE, flights, None, denver).unwrap();
+        assert_eq!(r.stops(), ["KLAS", "KDEN", "KPHX"]);
     }
 }

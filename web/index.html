@@ -480,6 +480,9 @@
   function freshState() {
     const n = P.answer.length;
     return {
+      // Saved games only resume against the same route, so a puzzle replaced
+      // on its own date starts fresh.
+      route: P.answer.join(),
       // The origin is given; everything after it is the puzzle.
       locked: Array.from({ length: n }, (_, i) => i === 0),
       airlineShown: false,
@@ -499,7 +502,7 @@
     try {
       const raw = localStorage.getItem(storageKey());
       const s = raw && JSON.parse(raw);
-      if (s && s.locked?.length === P.answer.length) return s;
+      if (s && s.route === P.answer.join()) return s;
     } catch {}
     return null;
   }
@@ -881,7 +884,7 @@
     const resp = await fetch(`puzzles/${entry.date}.json`);
     if (!resp.ok) throw new Error(`puzzle ${entry.date}: HTTP ${resp.status}`);
     P = await resp.json();
-    S = (hotData?.date === P.date && hotData.state) || restore() || freshState();
+    S = (hotData?.date === P.date && hotData.state?.route === P.answer.join() && hotData.state) || restore() || freshState();
 
     $("issue").textContent = `No. ${P.number} · ${fmtDate(P.date)}`;
     $("sample-chip").hidden = !P.sample;

@@ -1,27 +1,31 @@
 {
-  "date": "2026-10-21",
+  "date": "2026-10-20",
   "aircraft_type": "B38M",
-  "registration": null,
-  "operator": "Ryanair",
-  "sample": true,
+  "registration": "N8879Q",
+  "icao24": "ac3b78",
+  "operator": "Southwest Airlines",
   "legs": [
     {
-      "from": "EGSS",
-      "to": "EIDW",
-      "departure": "2026-10-21T06:00:00Z",
-      "arrival": "2026-10-21T07:05:00Z"
+      "from": "KLGB",
+      "to": "KSJC",
+      "departure": "2026-10-20T14:55:00Z",
+      "arrival": "2026-10-20T15:40:00Z",
+      "callsign": "SWA582"
     },
     {
-      "from": "EIDW",
-      "to": "EGSS",
-      "departure": "2026-10-21T07:30:00Z",
-      "arrival": "2026-10-21T08:35:00Z"
+      "from": "KSJC",
+      "to": "KDEN",
+      "departure": "2026-10-20T17:00:00Z",
+      "arrival": "2026-10-20T19:05:00Z",
+      "callsign": "SWA3553"
     },
     {
-      "from": "EGSS",
-      "to": "LEBL",
-      "departure": "2026-10-21T09:05:00Z",
-      "arrival": "2026-10-21T11:10:00Z"
+      "from": "KDEN",
+      "to": "KDTW",
+      "departure": "2026-10-20T20:35:00Z",
+      "arrival": "2026-10-20T22:50:00Z",
+      "callsign": "SWA1582"
     }
-  ]
+  ],
+  "sample": false
 }
